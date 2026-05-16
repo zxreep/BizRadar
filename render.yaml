@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: bizradar
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+    healthCheckPath: /api/search-location?q=test
