@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BizRadar — Global Business Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0d0f;
+    --bg2: #111417;
+    --bg3: #181c20;
+    --border: rgba(255,255,255,0.07);
+    --border2: rgba(255,255,255,0.13);
+    --accent: #00e5a0;
+    --accent2: #00b8ff;
+    --accent3: #ff6b6b;
+    --text: #f0f2f4;
+    --text2: #8a9099;
+    --text3: #50565e;
+    --radius: 10px;
+    --radius2: 16px;
+    --panel: 340px;
+    --font: 'Syne', sans-serif;
+    --mono: 'DM Mono', monospace;
+  }
+
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--font); }
+
+  /* Layout */
+  #app { display: flex; height: 100vh; width: 100vw; overflow: hidden; }
+  #sidebar { width: var(--panel); min-width: var(--panel); height: 100%; background: var(--bg2); border-right: 1px solid var(--border); display: flex; flex-direction: column; z-index: 100; }
+  #map-area { flex: 1; position: relative; overflow: hidden; }
+  #map { width: 100%; height: 100%; }
+
+  /* Sidebar header */
+  .s-header { padding: 20px 20px 16px; border-bottom: 1px solid var(--border); }
+  .logo { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+  .logo-icon { width: 32px; height: 32px; background: var(--accent); border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+  .logo-icon svg { width: 18px; height: 18px; fill: #0a0d0f; }
+  .logo-name { font-size: 18px; font-weight: 800; letter-spacing: -0.3px; }
+  .logo-tag { font-size: 10px; color: var(--accent); font-family: var(--mono); letter-spacing: 1.5px; text-transform: uppercase; margin-top: 1px; }
+
+  /* Search */
+  .search-wrap { position: relative; }
+  .search-input { width: 100%; background: var(--bg3); border: 1px solid var(--border2); border-radius: var(--radius); padding: 10px 40px 10px 14px; font-size: 13px; font-family: var(--font); color: var(--text); outline: none; transition: border-color 0.2s; }
+  .search-input:focus { border-color: var(--accent); }
+  .search-input::placeholder { color: var(--text3); }
+  .search-btn { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--accent); display: flex; align-items: center; }
+  .search-btn svg { width: 17px; height: 17px; }
+  .search-results { position: absolute; top: 100%; left: 0; right: 0; background: var(--bg3); border: 1px solid var(--border2); border-radius: var(--radius); margin-top: 4px; max-height: 180px; overflow-y: auto; z-index: 200; display: none; }
+  .search-result-item { padding: 10px 14px; font-size: 12px; cursor: pointer; border-bottom: 1px solid var(--border); transition: background 0.15s; }
+  .search-result-item:hover { background: var(--bg2); color: var(--accent); }
+  .search-result-item:last-child { border-bottom: none; }
+
+  /* Controls */
+  .s-controls { padding: 14px 20px; border-bottom: 1px solid var(--border); }
+  .ctrl-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .ctrl-row:last-child { margin-bottom: 0; }
+  .ctrl-label { font-size: 11px; color: var(--text2); font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.8px; }
+  .ctrl-val { font-size: 12px; color: var(--accent); font-family: var(--mono); font-weight: 500; }
+  .slider { width: 100%; -webkit-appearance: none; height: 3px; border-radius: 2px; background: var(--bg3); outline: none; }
+  .slider::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); cursor: pointer; border: 2px solid var(--bg2); }
+
+  .category-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .pill { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-family: var(--mono); border: 1px solid var(--border2); cursor: pointer; transition: all 0.15s; color: var(--text2); }
+  .pill.active { background: var(--accent); color: #0a0d0f; border-color: var(--accent); font-weight: 500; }
+  .pill:hover:not(.active) { border-color: var(--accent); color: var(--accent); }
+
+  /* Scan button */
+  .scan-btn { margin: 14px 20px; width: calc(100% - 40px); padding: 12px; background: var(--accent); color: #0a0d0f; border: none; border-radius: var(--radius); font-size: 13px; font-family: var(--font); font-weight: 700; cursor: pointer; letter-spacing: 0.3px; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.2s; }
+  .scan-btn:hover { background: #00ffc3; transform: translateY(-1px); }
+  .scan-btn:active { transform: translateY(0); }
+  .scan-btn.scanning { background: var(--bg3); color: var(--accent); border: 1px solid var(--accent); cursor: not-allowed; }
+  .pulse-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.7); } }
+
+  /* Results list */
+  .s-results { flex: 1; overflow-y: auto; padding: 0 0 80px; }
+  .s-results::-webkit-scrollbar { width: 3px; }
+  .s-results::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+  .results-header { padding: 14px 20px 8px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; background: var(--bg2); z-index: 10; border-bottom: 1px solid var(--border); }
+  .results-count { font-size: 11px; font-family: var(--mono); color: var(--text2); }
+  .results-count span { color: var(--accent); font-weight: 500; }
+  .sort-btn { font-size: 10px; font-family: var(--mono); color: var(--text3); background: none; border: none; cursor: pointer; padding: 3px 6px; border-radius: 4px; transition: all 0.15s; }
+  .sort-btn:hover { color: var(--text2); background: var(--bg3); }
+
+  .biz-card { padding: 12px 20px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.15s; }
+  .biz-card:hover { background: var(--bg3); }
+  .biz-card.active { background: rgba(0,229,160,0.06); border-left: 2px solid var(--accent); padding-left: 18px; }
+  .biz-name { font-size: 13px; font-weight: 600; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .biz-type { font-size: 11px; color: var(--text2); font-family: var(--mono); }
+  .biz-meta { display: flex; gap: 10px; margin-top: 6px; align-items: center; }
+  .biz-dist { font-size: 11px; color: var(--accent2); font-family: var(--mono); }
+  .biz-rating { font-size: 11px; color: var(--text2); font-family: var(--mono); }
+  .biz-open { font-size: 10px; padding: 2px 7px; border-radius: 10px; font-family: var(--mono); }
+  .biz-open.open { background: rgba(0,229,160,0.12); color: var(--accent); }
+  .biz-open.closed { background: rgba(255,107,107,0.12); color: var(--accent3); }
+
+  /* Map overlays */
+  .map-topbar { position: absolute; top: 16px; left: 16px; right: 16px; display: flex; gap: 10px; align-items: flex-start; z-index: 50; pointer-events: none; }
+  .map-badge { background: rgba(10,13,15,0.85); backdrop-filter: blur(12px); border: 1px solid var(--border2); border-radius: var(--radius); padding: 8px 14px; font-size: 12px; font-family: var(--mono); pointer-events: auto; }
+  .map-badge.coord { color: var(--accent); }
+  .map-badge.status { color: var(--text2); }
+
+  /* Detail panel */
+  #detail-panel { position: absolute; right: 0; top: 0; bottom: 0; width: 360px; background: var(--bg2); border-left: 1px solid var(--border); transform: translateX(100%); transition: transform 0.3s cubic-bezier(0.4,0,0.2,1); z-index: 60; overflow-y: auto; display: flex; flex-direction: column; }
+  #detail-panel.open { transform: translateX(0); }
+  #detail-panel::-webkit-scrollbar { width: 3px; }
+  #detail-panel::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+  .dp-close { position: absolute; top: 14px; right: 14px; width: 30px; height: 30px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 2; transition: all 0.15s; color: var(--text2); }
+  .dp-close:hover { color: var(--accent3); border-color: var(--accent3); }
+  .dp-img { width: 100%; height: 120px; background: var(--bg3); display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
+  .dp-img-placeholder { font-size: 40px; opacity: 0.15; }
+  .dp-img-cat { position: absolute; bottom: 10px; left: 14px; font-size: 10px; font-family: var(--mono); text-transform: uppercase; letter-spacing: 1px; padding: 3px 8px; border-radius: 4px; background: var(--accent); color: #0a0d0f; font-weight: 700; }
+  .dp-body { padding: 18px 20px; }
+  .dp-name { font-size: 20px; font-weight: 800; margin-bottom: 4px; line-height: 1.2; }
+  .dp-type { font-size: 12px; font-family: var(--mono); color: var(--text2); margin-bottom: 14px; }
+  .dp-section { margin-bottom: 18px; }
+  .dp-section-title { font-size: 10px; font-family: var(--mono); text-transform: uppercase; letter-spacing: 1.2px; color: var(--text3); margin-bottom: 8px; }
+  .dp-row { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; font-size: 13px; }
+  .dp-row-icon { width: 16px; height: 16px; flex-shrink: 0; margin-top: 1px; color: var(--text3); }
+  .dp-row-icon svg { width: 16px; height: 16px; }
+  .dp-row-val { color: var(--text); line-height: 1.4; }
+  .dp-row-val a { color: var(--accent2); text-decoration: none; }
+  .dp-row-val a:hover { text-decoration: underline; }
+  .dp-hours-grid { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 12px; font-family: var(--mono); }
+  .dp-hours-day { color: var(--text2); }
+  .dp-hours-time { color: var(--text); }
+  .dp-hours-time.today { color: var(--accent); }
+  .dp-social { display: flex; gap: 8px; flex-wrap: wrap; }
+  .dp-social-link { padding: 5px 12px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 6px; font-size: 11px; font-family: var(--mono); color: var(--text2); text-decoration: none; transition: all 0.15s; }
+  .dp-social-link:hover { border-color: var(--accent2); color: var(--accent2); }
+  .dp-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .dp-tag { padding: 3px 8px; border-radius: 4px; font-size: 11px; font-family: var(--mono); background: var(--bg3); color: var(--text2); border: 1px solid var(--border); }
+
+  /* Map controls overlay */
+  .map-controls { position: absolute; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 50; }
+  .mc-btn { width: 38px; height: 38px; background: rgba(10,13,15,0.9); backdrop-filter: blur(12px); border: 1px solid var(--border2); border-radius: var(--radius); cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--text2); transition: all 0.15s; }
+  .mc-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .mc-btn svg { width: 18px; height: 18px; }
+
+  /* Leaflet overrides */
+  .leaflet-container { background: #0a0d0f !important; }
+  .leaflet-tile { filter: brightness(0.7) saturate(0.5) invert(1) hue-rotate(180deg); }
+  .leaflet-control-zoom { border: 1px solid var(--border2) !important; background: var(--bg2) !important; }
+  .leaflet-control-zoom a { background: var(--bg2) !important; color: var(--text2) !important; border-bottom-color: var(--border) !important; }
+  .leaflet-control-zoom a:hover { color: var(--accent) !important; background: var(--bg3) !important; }
+  .leaflet-control-attribution { display: none !important; }
+
+  /* Custom marker */
+  .custom-marker { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; border: 2px solid rgba(0,229,160,0.4); cursor: pointer; transition: all 0.2s; box-shadow: 0 0 0 0 rgba(0,229,160,0); }
+  .custom-marker:hover { transform: scale(1.2); border-color: var(--accent); }
+  .custom-marker.selected { transform: scale(1.3); border-color: var(--accent); box-shadow: 0 0 0 4px rgba(0,229,160,0.2); }
+  .center-marker { width: 14px; height: 14px; background: var(--accent); border-radius: 50%; border: 3px solid rgba(0,229,160,0.3); box-shadow: 0 0 0 0 rgba(0,229,160,0.5); animation: sonar 2s infinite; }
+  @keyframes sonar { 0%,100% { box-shadow: 0 0 0 0 rgba(0,229,160,0.5); } 50% { box-shadow: 0 0 0 12px rgba(0,229,160,0); } }
+
+  /* Empty state */
+  .empty-state { padding: 30px 20px; text-align: center; }
+  .empty-icon { font-size: 32px; margin-bottom: 10px; opacity: 0.3; }
+  .empty-text { font-size: 12px; color: var(--text3); line-height: 1.6; font-family: var(--mono); }
+
+  /* Loading */
+  .loading-overlay { position: absolute; inset: 0; background: rgba(10,13,15,0.6); display: none; align-items: center; justify-content: center; z-index: 200; backdrop-filter: blur(4px); }
+  .loading-overlay.show { display: flex; }
+  .loading-spinner { text-align: center; }
+  .spinner { width: 40px; height: 40px; border: 3px solid var(--border2); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 12px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner-text { font-size: 12px; font-family: var(--mono); color: var(--accent); }
+
+  /* Status bar */
+  .status-bar { position: absolute; bottom: 0; left: 0; right: 0; height: 26px; background: rgba(10,13,15,0.9); border-top: 1px solid var(--border); display: flex; align-items: center; padding: 0 16px; gap: 16px; z-index: 50; }
+  .sb-item { font-size: 10px; font-family: var(--mono); color: var(--text3); display: flex; align-items: center; gap: 5px; }
+  .sb-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+  .sb-dot.offline { background: var(--accent3); }
+
+  /* Mobile sidebar toggle */
+  .mobile-toggle { display: none; position: fixed; bottom: 20px; left: 20px; z-index: 300; width: 48px; height: 48px; background: var(--accent); border: none; border-radius: 12px; cursor: pointer; align-items: center; justify-content: center; box-shadow: 0 4px 20px rgba(0,229,160,0.3); }
+  .mobile-toggle svg { width: 22px; height: 22px; fill: #0a0d0f; }
+
+  @media (max-width: 768px) {
+    :root { --panel: 100vw; }
+    #sidebar { position: fixed; left: 0; top: 0; bottom: 0; transform: translateX(-100%); transition: transform 0.3s ease; z-index: 200; }
+    #sidebar.open { transform: translateX(0); }
+    .mobile-toggle { display: flex; }
+    #detail-panel { width: 100vw; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- SIDEBAR -->
+  <div id="sidebar">
+    <div class="s-header">
+      <div class="logo">
+        <div class="logo-icon">
+          <svg viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+        </div>
+        <div>
+          <div class="logo-name">BizRadar</div>
+          <div class="logo-tag">Business Intel</div>
+        </div>
+      </div>
+      <div class="search-wrap">
+        <input class="search-input" id="location-search" type="text" placeholder="Search any city, place, address..." autocomplete="off">
+        <button class="search-btn" id="search-go-btn" title="Search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        </button>
+        <div class="search-results" id="search-results"></div>
+      </div>
+    </div>
+
+    <div class="s-controls">
+      <div class="ctrl-row">
+        <span class="ctrl-label">Scan radius</span>
+        <span class="ctrl-val" id="radius-val">500 m</span>
+      </div>
+      <input type="range" class="slider" id="radius-slider" min="100" max="5000" step="100" value="500">
+      <div class="category-pills" id="cat-pills">
+        <div class="pill active" data-cat="all">All</div>
+        <div class="pill" data-cat="restaurant">Food</div>
+        <div class="pill" data-cat="shop">Shops</div>
+        <div class="pill" data-cat="healthcare">Health</div>
+        <div class="pill" data-cat="hotel">Hotels</div>
+        <div class="pill" data-cat="bank">Finance</div>
+        <div class="pill" data-cat="education">Education</div>
+      </div>
+    </div>
+
+    <button class="scan-btn" id="scan-btn">
+      <span class="pulse-dot"></span> Scan Area
+    </button>
+
+    <div class="s-results" id="results-list">
+      <div class="empty-state">
+        <div class="empty-icon">📡</div>
+        <div class="empty-text">Search a location and hit<br>Scan Area to discover businesses</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAP AREA -->
+  <div id="map-area">
+    <div id="map"></div>
+
+    <div class="map-topbar">
+      <div class="map-badge coord" id="coord-badge">0.0000°N, 0.0000°E</div>
+      <div class="map-badge status" id="status-badge">Drag map to explore</div>
+    </div>
+
+    <div id="detail-panel">
+      <button class="dp-close" id="dp-close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+      <div id="dp-content"></div>
+    </div>
+
+    <div class="map-controls">
+      <button class="mc-btn" id="mc-locate" title="My Location">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="9" opacity=".3"/></svg>
+      </button>
+      <button class="mc-btn" id="mc-zoom-in" title="Zoom In">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+      <button class="mc-btn" id="mc-zoom-out" title="Zoom Out">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14"/></svg>
+      </button>
+    </div>
+
+    <div class="loading-overlay" id="loading">
+      <div class="loading-spinner">
+        <div class="spinner"></div>
+        <div class="spinner-text" id="loading-text">Scanning area...</div>
+      </div>
+    </div>
+
+    <div class="status-bar">
+      <div class="sb-item"><div class="sb-dot" id="api-dot"></div> <span id="api-status">OpenStreetMap</span></div>
+      <div class="sb-item" id="sb-count"></div>
+      <div class="sb-item" id="sb-zoom"></div>
+    </div>
+  </div>
+</div>
+
+<button class="mobile-toggle" id="mobile-toggle">
+  <svg viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
+</button>
+
+<script>
+// ═══════════════════════════════════════════════════════
+// BIZRADAR — All API calls go through backend proxy
+// ═══════════════════════════════════════════════════════
+
+const API = ''; // same-origin — no CORS, no direct external calls
+
+let map, centerMarker, radiusCircle;
+let currentCenter = { lat: 48.8566, lng: 2.3522 }; // Paris default
+let currentRadius = 500;
+let currentCategory = 'all';
+let businesses = [];
+let markers = [];
+let selectedId = null;
+let searchDebounce = null;
+
+// ── Map Init ──────────────────────────────────────────
+function initMap() {
+  map = L.map('map', {
+    center: [currentCenter.lat, currentCenter.lng],
+    zoom: 15,
+    zoomControl: false,
+    attributionControl: false
+  });
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19
+  }).addTo(map);
+
+  map.on('moveend', updateCoordBadge);
+  map.on('zoomend', () => {
+    updateCoordBadge();
+    document.getElementById('sb-zoom').textContent = 'Zoom ' + map.getZoom();
+  });
+
+  map.on('click', (e) => {
+    currentCenter = { lat: e.latlng.lat, lng: e.latlng.lng };
+    updateCenterMarker();
+  });
+
+  updateCenterMarker();
+  updateCoordBadge();
+  document.getElementById('sb-zoom').textContent = 'Zoom ' + map.getZoom();
+}
+
+function updateCenterMarker() {
+  if (centerMarker) map.removeLayer(centerMarker);
+  if (radiusCircle) map.removeLayer(radiusCircle);
+
+  const el = document.createElement('div');
+  el.className = 'center-marker';
+  centerMarker = L.marker([currentCenter.lat, currentCenter.lng], {
+    icon: L.divIcon({ className: '', html: el, iconSize: [14, 14], iconAnchor: [7, 7] })
+  }).addTo(map);
+
+  radiusCircle = L.circle([currentCenter.lat, currentCenter.lng], {
+    radius: currentRadius,
+    color: '#00e5a0',
+    fillColor: '#00e5a0',
+    fillOpacity: 0.04,
+    weight: 1,
+    dashArray: '4 4',
+    opacity: 0.4
+  }).addTo(map);
+}
+
+function updateCoordBadge() {
+  const c = map.getCenter();
+  document.getElementById('coord-badge').textContent =
+    Math.abs(c.lat).toFixed(4) + '°' + (c.lat >= 0 ? 'N' : 'S') + ', ' +
+    Math.abs(c.lng).toFixed(4) + '°' + (c.lng >= 0 ? 'E' : 'W');
+}
+
+// ── Category mapping ──────────────────────────────────
+// CAT_EMOJI and label helpers (used for rendering markers client-side)
+const CAT_EMOJI = {
+  restaurant: '🍽', cafe: '☕', fast_food: '🍔', bar: '🍺', pub: '🍻',
+  shop: '🛍', pharmacy: '💊', hospital: '🏥', clinic: '🏥', doctors: '👨‍⚕️',
+  hotel: '🏨', hostel: '🏠', bank: '🏦', atm: '💳', school: '🎓',
+  university: '🎓', library: '📚', default: '📍'
+};
+
+function getEmoji(tags) {
+  if (!tags) return '📍';
+  const key = tags.amenity || tags.shop || tags.tourism || tags.healthcare || 'default';
+  return CAT_EMOJI[key] || '📍';
+}
+
+function getCategoryLabel(tags) {
+  if (!tags) return 'Business';
+  const v = tags.amenity || tags.shop || tags.tourism || tags.leisure || tags.healthcare || tags.office;
+  if (!v) return 'Place';
+  return v.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+// ── Scan Area (via backend proxy) ─────────────────────
+async function scanArea() {
+  const btn = document.getElementById('scan-btn');
+  btn.classList.add('scanning');
+  btn.innerHTML = '<span class="pulse-dot"></span> Scanning...';
+  showLoading('Querying backend...');
+  clearMarkers(); businesses = []; renderResults();
+
+  try {
+    const resp = await fetch(API + '/api/scan-area', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        lat: currentCenter.lat, lng: currentCenter.lng,
+        radius: currentRadius, category: currentCategory
+      })
+    });
+    if (!resp.ok) throw new Error('Server error: ' + resp.status);
+    const data = await resp.json();
+
+    updateLoadingText('Processing ' + (data.elements?.length || 0) + ' results...');
+    await new Promise(r => setTimeout(r, 200));
+
+    businesses = processElements(data.elements || []);
+    renderMarkers(); renderResults();
+    document.getElementById('sb-count').textContent = businesses.length + ' businesses';
+    setStatus(businesses.length > 0 ? 'Found ' + businesses.length + ' businesses' : 'No results — try larger radius');
+    document.getElementById('api-dot').classList.toggle('offline', businesses.length === 0);
+
+  } catch (err) {
+    console.error(err);
+    setStatus('Error: ' + err.message);
+    document.getElementById('api-dot').classList.add('offline');
+    document.getElementById('results-list').innerHTML =
+      `<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-text">${escHtml(err.message)}</div></div>`;
+  } finally {
+    hideLoading();
+    btn.classList.remove('scanning');
+    btn.innerHTML = '<span class="pulse-dot"></span> Scan Area';
+  }
+}
+
+function processElements(elements) {
+  const seen = new Set();
+  const result = [];
+  for (const el of elements) {
+    const tags = el.tags || {};
+    const name = tags.name;
+    if (!name || seen.has(name + (el.lat || el.center?.lat))) continue;
+    seen.add(name + (el.lat || el.center?.lat));
+
+    const lat = el.lat || el.center?.lat;
+    const lng = el.lon || el.center?.lon;
+    if (!lat || !lng) continue;
+
+    const dist = haversine(currentCenter.lat, currentCenter.lng, lat, lng);
+
+    result.push({
+      id: el.id,
+      name,
+      lat, lng,
+      tags,
+      dist,
+      category: getCategoryLabel(tags),
+      emoji: getEmoji(tags),
+      phone: tags.phone || tags['contact:phone'],
+      website: tags.website || tags['contact:website'] || tags.url,
+      email: tags.email || tags['contact:email'],
+      hours: tags.opening_hours,
+      address: buildAddress(tags),
+      social: {
+        facebook: tags['contact:facebook'],
+        instagram: tags['contact:instagram'],
+        twitter: tags['contact:twitter'],
+        wikipedia: tags.wikipedia
+      },
+      description: tags.description,
+      brand: tags.brand,
+      cuisine: tags.cuisine,
+      stars: tags.stars,
+      operator: tags.operator,
+      wheelchair: tags.wheelchair,
+      wifi: tags.wifi
+    });
+  }
+  return result.sort((a, b) => a.dist - b.dist);
+}
+
+function buildAddress(tags) {
+  const parts = [
+    tags['addr:housenumber'],
+    tags['addr:street'],
+    tags['addr:city'],
+    tags['addr:country']
+  ].filter(Boolean);
+  return parts.join(', ') || null;
+}
+
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
+
+// ── Markers ───────────────────────────────────────────
+function renderMarkers() {
+  clearMarkers();
+  businesses.forEach(biz => {
+    const el = document.createElement('div');
+    el.className = 'custom-marker';
+    el.style.background = markerBg(biz.tags);
+    el.textContent = biz.emoji;
+    el.title = biz.name;
+
+    const m = L.marker([biz.lat, biz.lng], {
+      icon: L.divIcon({ className: '', html: el, iconSize: [28, 28], iconAnchor: [14, 14] })
+    }).addTo(map);
+
+    m.on('click', () => selectBusiness(biz.id));
+    biz._marker = m;
+    biz._el = el;
+    markers.push(m);
+  });
+}
+
+function markerBg(tags) {
+  const a = tags?.amenity;
+  if (['restaurant','cafe','fast_food','bar','pub'].includes(a)) return 'rgba(255,107,107,0.18)';
+  if (['hospital','pharmacy','clinic','doctors'].includes(a)) return 'rgba(0,184,255,0.18)';
+  if (['hotel','hostel','motel'].includes(tags?.tourism)) return 'rgba(255,165,0,0.18)';
+  if (['bank','atm'].includes(a)) return 'rgba(0,229,160,0.18)';
+  if (tags?.shop) return 'rgba(180,100,255,0.18)';
+  return 'rgba(255,255,255,0.1)';
+}
+
+function clearMarkers() {
+  markers.forEach(m => map.removeLayer(m));
+  markers = [];
+}
+
+// ── Results List ──────────────────────────────────────
+function renderResults() {
+  const el = document.getElementById('results-list');
+  if (!businesses.length) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">📡</div><div class="empty-text">No businesses found.<br>Try a larger radius or different category.</div></div>`;
+    return;
+  }
+
+  let html = `<div class="results-header">
+    <div class="results-count">Found <span>${businesses.length}</span> businesses</div>
+  </div>`;
+
+  businesses.forEach(biz => {
+    const distStr = biz.dist >= 1000 ? (biz.dist / 1000).toFixed(1) + ' km' : biz.dist + ' m';
+    html += `<div class="biz-card${selectedId === biz.id ? ' active' : ''}" data-id="${biz.id}">
+      <div class="biz-name">${escHtml(biz.name)}</div>
+      <div class="biz-type">${escHtml(biz.category)}</div>
+      <div class="biz-meta">
+        <div class="biz-dist">${distStr}</div>
+        ${biz.phone ? '<div class="biz-rating">📞 ' + escHtml(biz.phone) + '</div>' : ''}
+        ${biz.hours ? `<div class="biz-open ${isOpenNow(biz.hours) ? 'open' : 'closed'}">${isOpenNow(biz.hours) ? 'Open' : 'Closed'}</div>` : ''}
+      </div>
+    </div>`;
+  });
+
+  el.innerHTML = html;
+
+  el.querySelectorAll('.biz-card').forEach(card => {
+    card.addEventListener('click', () => selectBusiness(+card.dataset.id));
+  });
+}
+
+// ── Select / Detail Panel ─────────────────────────────
+function selectBusiness(id) {
+  selectedId = id;
+  const biz = businesses.find(b => b.id === id);
+  if (!biz) return;
+
+  // Highlight marker
+  businesses.forEach(b => {
+    if (b._el) b._el.classList.remove('selected');
+  });
+  if (biz._el) biz._el.classList.add('selected');
+
+  // Pan map
+  map.panTo([biz.lat, biz.lng], { animate: true });
+
+  // Update sidebar highlight
+  document.querySelectorAll('.biz-card').forEach(c => c.classList.remove('active'));
+  const card = document.querySelector(`.biz-card[data-id="${id}"]`);
+  if (card) { card.classList.add('active'); card.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+
+  // Detail panel
+  renderDetailPanel(biz);
+  document.getElementById('detail-panel').classList.add('open');
+}
+
+function renderDetailPanel(biz) {
+  const distStr = biz.dist >= 1000 ? (biz.dist / 1000).toFixed(1) + ' km' : biz.dist + ' m';
+  const socialLinks = Object.entries(biz.social || {}).filter(([k, v]) => v).map(([k, v]) =>
+    `<a href="${v.startsWith('http') ? v : 'https://' + v}" target="_blank" rel="noopener" class="dp-social-link">${k}</a>`
+  ).join('');
+
+  const hoursBlock = biz.hours ? `
+    <div class="dp-section">
+      <div class="dp-section-title">Hours</div>
+      <div style="font-size:12px;font-family:var(--mono);color:var(--text2);line-height:1.8;">${escHtml(biz.hours)}</div>
+    </div>` : '';
+
+  const tagsBlock = [biz.cuisine, biz.brand, biz.operator].filter(Boolean).map(t =>
+    `<span class="dp-tag">${escHtml(t)}</span>`).join('');
+
+  document.getElementById('dp-content').innerHTML = `
+    <div class="dp-img">
+      <div class="dp-img-placeholder">${biz.emoji}</div>
+      <div class="dp-img-cat">${escHtml(biz.category)}</div>
+    </div>
+    <div class="dp-body">
+      <div class="dp-name">${escHtml(biz.name)}</div>
+      <div class="dp-type">${distStr} away</div>
+
+      <div class="dp-section" style="margin-top:14px">
+        <div class="dp-section-title">Contact & Info</div>
+        ${biz.address ? `<div class="dp-row">
+          <div class="dp-row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></div>
+          <div class="dp-row-val">${escHtml(biz.address)}</div>
+        </div>` : ''}
+        ${biz.phone ? `<div class="dp-row">
+          <div class="dp-row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2A19.79 19.79 0 0 1 11.27 18a19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg></div>
+          <div class="dp-row-val"><a href="tel:${biz.phone}">${escHtml(biz.phone)}</a></div>
+        </div>` : ''}
+        ${biz.email ? `<div class="dp-row">
+          <div class="dp-row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></div>
+          <div class="dp-row-val"><a href="mailto:${biz.email}">${escHtml(biz.email)}</a></div>
+        </div>` : ''}
+        ${biz.website ? `<div class="dp-row">
+          <div class="dp-row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></div>
+          <div class="dp-row-val"><a href="${biz.website}" target="_blank" rel="noopener">${biz.website.replace(/^https?:\/\//, '')}</a></div>
+        </div>` : ''}
+        ${biz.wifi ? `<div class="dp-row"><div class="dp-row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg></div><div class="dp-row-val" style="color:var(--accent)">WiFi: ${biz.wifi}</div></div>` : ''}
+        ${biz.wheelchair ? `<div class="dp-row"><div class="dp-row-icon">♿</div><div class="dp-row-val" style="font-size:11px;color:var(--text2)">Wheelchair: ${biz.wheelchair}</div></div>` : ''}
+      </div>
+
+      ${hoursBlock}
+
+      ${socialLinks ? `<div class="dp-section"><div class="dp-section-title">Social & Web</div><div class="dp-social">${socialLinks}</div></div>` : ''}
+
+      ${tagsBlock ? `<div class="dp-section"><div class="dp-section-title">Tags</div><div class="dp-tags">${tagsBlock}</div></div>` : ''}
+
+      ${biz.description ? `<div class="dp-section"><div class="dp-section-title">About</div><div style="font-size:13px;color:var(--text2);line-height:1.6;">${escHtml(biz.description)}</div></div>` : ''}
+
+      <div class="dp-section">
+        <div class="dp-section-title">Map Data</div>
+        <div style="font-size:11px;font-family:var(--mono);color:var(--text3)">OSM ID: ${biz.id} · ${biz.lat.toFixed(5)}, ${biz.lng.toFixed(5)}</div>
+        <div style="margin-top:8px">
+          <a href="https://www.openstreetmap.org/node/${biz.id}" target="_blank" rel="noopener" class="dp-social-link">View on OSM ↗</a>
+          <a href="https://maps.google.com/?q=${biz.lat},${biz.lng}" target="_blank" rel="noopener" class="dp-social-link" style="margin-left:6px">Google Maps ↗</a>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ── Search (via backend proxy) ────────────────────────
+let searchAC = null;
+
+async function searchLocation(query) {
+  if (query.length < 3) { hideSearchResults(); return; }
+  if (searchAC) searchAC.abort();
+  searchAC = new AbortController();
+  try {
+    const resp = await fetch(API + '/api/search-location?q=' + encodeURIComponent(query), {
+      signal: searchAC.signal
+    });
+    const data = await resp.json();
+    showSearchResults(data);
+  } catch (e) { if (e.name !== 'AbortError') console.error(e); }
+}
+
+function showSearchResults(results) {
+  const el = document.getElementById('search-results');
+  if (!results.length) { el.style.display = 'none'; return; }
+  el.innerHTML = results.map(r =>
+    `<div class="search-result-item" data-lat="${r.lat}" data-lng="${r.lon}">${escHtml(r.display_name)}</div>`
+  ).join('');
+  el.style.display = 'block';
+  el.querySelectorAll('.search-result-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const lat = +item.dataset.lat, lng = +item.dataset.lng;
+      currentCenter = { lat, lng };
+      map.flyTo([lat, lng], 15);
+      updateCenterMarker();
+      hideSearchResults();
+      document.getElementById('location-search').value = item.textContent;
+    });
+  });
+}
+
+function hideSearchResults() {
+  document.getElementById('search-results').style.display = 'none';
+}
+
+// ── Utilities ─────────────────────────────────────────
+function isOpenNow(hoursStr) {
+  // simplified: if contains 24/7 return true, else return null (unknown)
+  if (!hoursStr) return null;
+  if (hoursStr.includes('24/7')) return true;
+  // Simple check for current day
+  const days = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+  const now = new Date();
+  const day = days[now.getDay()];
+  const h = now.getHours();
+  const m = now.getMinutes();
+  const current = h * 60 + m;
+  // Try to parse simple patterns like "Mo-Fr 09:00-18:00"
+  const match = hoursStr.match(/(\d{2}):(\d{2})-(\d{2}):(\d{2})/);
+  if (match) {
+    const open = +match[1] * 60 + +match[2];
+    const close = +match[3] * 60 + +match[4];
+    return current >= open && current < close;
+  }
+  return null;
+}
+
+function escHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function setStatus(msg) {
+  document.getElementById('status-badge').textContent = msg;
+}
+
+function showLoading(msg) {
+  document.getElementById('loading-text').textContent = msg;
+  document.getElementById('loading').classList.add('show');
+}
+
+function updateLoadingText(msg) {
+  document.getElementById('loading-text').textContent = msg;
+}
+
+function hideLoading() {
+  document.getElementById('loading').classList.remove('show');
+}
+
+// ── Event Listeners ───────────────────────────────────
+document.getElementById('radius-slider').addEventListener('input', function() {
+  currentRadius = +this.value;
+  const label = currentRadius >= 1000 ? (currentRadius / 1000).toFixed(1) + ' km' : currentRadius + ' m';
+  document.getElementById('radius-val').textContent = label;
+  if (radiusCircle) radiusCircle.setRadius(currentRadius);
+});
+
+document.getElementById('cat-pills').addEventListener('click', function(e) {
+  const pill = e.target.closest('.pill');
+  if (!pill) return;
+  document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  currentCategory = pill.dataset.cat;
+});
+
+document.getElementById('scan-btn').addEventListener('click', scanArea);
+
+document.getElementById('location-search').addEventListener('input', function() {
+  clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(() => searchLocation(this.value.trim()), 280);
+});
+
+document.getElementById('location-search').addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') hideSearchResults();
+  if (e.key === 'Enter') {
+    hideSearchResults();
+    const first = document.querySelector('.search-result-item');
+    if (first) first.click();
+  }
+});
+
+document.getElementById('search-go-btn').addEventListener('click', () => {
+  const q = document.getElementById('location-search').value.trim();
+  if (q) searchLocation(q);
+});
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.search-wrap')) hideSearchResults();
+});
+
+document.getElementById('dp-close').addEventListener('click', () => {
+  document.getElementById('detail-panel').classList.remove('open');
+  selectedId = null;
+  businesses.forEach(b => { if (b._el) b._el.classList.remove('selected'); });
+  document.querySelectorAll('.biz-card').forEach(c => c.classList.remove('active'));
+});
+
+document.getElementById('mc-locate').addEventListener('click', () => {
+  if (!navigator.geolocation) return setStatus('Geolocation not supported');
+  navigator.geolocation.getCurrentPosition(pos => {
+    currentCenter = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    map.flyTo([currentCenter.lat, currentCenter.lng], 15);
+    updateCenterMarker();
+    setStatus('Centered on your location');
+  }, () => setStatus('Location access denied'));
+});
+
+document.getElementById('mc-zoom-in').addEventListener('click', () => map.zoomIn());
+document.getElementById('mc-zoom-out').addEventListener('click', () => map.zoomOut());
+
+document.getElementById('mobile-toggle').addEventListener('click', () => {
+  document.getElementById('sidebar').classList.toggle('open');
+});
+
+// ── Init ──────────────────────────────────────────────
+initMap();
+setStatus('Click map to set scan center, then Scan Area');
+
+</script>
+</body>
+</html>
